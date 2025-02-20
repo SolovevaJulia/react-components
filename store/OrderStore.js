@@ -1,7 +1,7 @@
 import { makeAutoObservable } from 'mobx';
 import { v4 as uuid } from 'uuid';
-import { getCalculatedPrice, createPlanOrder, createOrder } from 'api';
-import UserStore from './UserStore';
+// В реальном проекте тут должны быть API-запросы
+// import { getCalculatedPrice, createPlanOrder, createOrder } from 'api';
 
 class OrderStore {
   name = null;
@@ -11,13 +11,14 @@ class OrderStore {
   style = 'scandy';
   promocode = null;
   error = null;
+  paymentLink = null;
 
   constructor() {
     makeAutoObservable(this);
   }
 
   get sum() {
-    return String(this.price.sum).replace('.', ',');
+    return String(this.price.sum ?? 0).replace('.', ',');
   }
 
   get itemPrice() {
@@ -45,7 +46,7 @@ class OrderStore {
     this.name = name;
     this.style = 'scandy';
     this.tariff = 2;
-    this.plans = this.getModifityFiles(plans);
+    this.plans = this.getModifiedFiles(plans);
     this.calculate();
   }
 
@@ -56,42 +57,43 @@ class OrderStore {
   }
 
   addFiles(files) {
-    this.plans = this.plans.concat(this.getModifityFiles(files));
+    this.plans = this.plans.concat(this.getModifiedFiles(files));
     this.calculate();
   }
 
-  getModifityFiles(files) {
-    return Array.from(files).map((file) => {
-      return {
-        id: uuid(),
-        file
-      };
-    });
+  getModifiedFiles(files) {
+    return Array.from(files).map((file) => ({
+      id: uuid(),
+      file
+    }));
   }
 
-  calculate() {
+  async calculate() {
     const params = {
       count: this.plans.length,
-      promocode: this.promocode === '' ? null : this.promocode,
+      promocode: this.promocode || null,
       tariff_id: this.tariff
     };
-    getCalculatedPrice(params).then(({ data }) => {
+    try {
+      const data = await mockGetCalculatedPrice(params);
       this.price = data;
-    });
+    } catch (error) {
+      this.error = 'Ошибка при расчёте цены';
+    }
   }
 
   close() {
     this.plans = [];
   }
 
-  createOrder() {
+  async createOrder(email, customerType) {
     this.error = null;
     const fd = new FormData();
 
     fd.append('style', this.style);
     fd.append('tariff_id', this.tariff);
-    fd.append('email', UserStore.email);
-    fd.append('customer_type', UserStore.customerType);
+    fd.append('email', email);
+    fd.append('customer_type', customerType);
 
     this.plans.forEach((plan) => fd.append('plans[]', plan.file));
 
@@ -99,26 +101,55 @@ class OrderStore {
       fd.append('promocode', this.promocode);
     }
 
-    return createOrder(token, fd)
-      .then(({ data }) => {
-        this.paymentLink = data.data.payment_link;
-      })
-      .catch((e) => (this.error = e.response.data.message));
+    try {
+      // В реальном проекте заменено на API-запрос
+      const data = await mockCreateOrder(fd);
+      this.paymentLink = data.payment_link;
+    } catch (e) {
+      this.error = 'Ошибка при создании заказа';
+    }
   }
 
-  createPlanOrder(formData) {
+  async createPlanOrder(formData) {
     this.error = null;
 
-    return createPlanOrder(token, formData)
-      .then(({ data }) => {
-        this.paymentLink = data.data.payment_link;
-        return data;
-      })
-      .catch((e) => {
-        this.error = e.response.data.message;
-        throw e;
-      });
+    try {
+      // В реальном проекте заменено на API-запрос
+      const data = await mockCreatePlanOrder(formData);
+      this.paymentLink = data.payment_link;
+      return data;
+    } catch (e) {
+      this.error = 'Ошибка при создании заказа';
+      throw e;
+    }
   }
+}
+
+/** Мок-функция для расчёта цены */
+async function mockGetCalculatedPrice(params) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({ items: { "10.00": params.count }, count: params.count, sum: params.count * 10 });
+    }, 500);
+  });
+}
+
+/** Мок-функция для создания заказа */
+async function mockCreateOrder(formData) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({ payment_link: "https://mock-payment.com" });
+    }, 500);
+  });
+}
+
+/** Мок-функция для создания заказа планов */
+async function mockCreatePlanOrder(formData) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({ payment_link: "https://mock-plan-order.com" });
+    }, 500);
+  });
 }
 
 export default new OrderStore();
